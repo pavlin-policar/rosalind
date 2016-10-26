@@ -1,3 +1,5 @@
 *.pdf
 .idea/
 env/
+samples/
+solutions/
