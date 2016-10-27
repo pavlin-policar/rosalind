@@ -12,8 +12,7 @@ def get_orfs(seq):
             matches = findall(
                 r'(?=(ATG(?:(?:\w{3})*?)(?:TAG|TGA|TAA)))',
                 str(strand)[offset:])
-            for match in matches:
-                orfs.add(translate(match, to_stop=True))
+            orfs.update(translate(match, to_stop=True) for match in matches)
     return orfs
 
 
