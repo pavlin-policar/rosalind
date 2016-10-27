@@ -5,8 +5,8 @@ from Bio import SeqIO
 
 if __name__ == '__main__':
     records = list(SeqIO.parse(sys.stdin, 'fasta'))
-    diffs = [[int(str(x.seq)[i] != str(y.seq)[i]) for i in range(len(x.seq))]
-             for x, y in product(records, records)]
+    diffs = [[xi != yi for xi, yi in zip(str(x.seq), str(y.seq))]
+             for x, y in product(records, repeat=2)]
 
     distances = [sum(diff) / len(diffs[0]) for diff in diffs]
 
