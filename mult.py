@@ -34,7 +34,7 @@ def traceback(T, *seqs):
     strings = [deque() for _ in seqs]
     while any(x + 1 for x in pos):
         npos = T[pos]
-        for (i, s), (j, nj) in zip(enumerate(seqs), zip(pos, npos)):
+        for (i, s), j, nj in zip(enumerate(seqs), pos, npos):
             strings[i].appendleft(s[j] if j is not nj else '-')
         pos = npos
     return [''.join(s) for s in strings]
