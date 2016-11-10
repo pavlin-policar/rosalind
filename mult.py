@@ -1,12 +1,10 @@
 import math
+import operator
 import sys
-from collections import defaultdict
-from collections import deque
+from collections import defaultdict, deque
 from itertools import combinations, product
 
-import operator
 from Bio import SeqIO
-from pprint import pprint
 
 
 def global_alignment(*seqs, score):
@@ -26,11 +24,12 @@ def global_alignment(*seqs, score):
              score_combinations(*(s[x] if y == 1 else '-'
                                   for x, y, s in zip(pos, o, seqs))),
              tuple(x - y for x, y in zip(pos, o)))
-             for o in calc_options), key=operator.itemgetter(0))
+            for o in calc_options), key=operator.itemgetter(0))
     return M, T
 
 
 def traceback(T, *seqs):
+    """Perform traceback for global multiple sequence alignment."""
     pos = tuple(len(s) - 1 for s in seqs)
     strings = [deque() for _ in seqs]
     while any(x + 1 for x in pos):
