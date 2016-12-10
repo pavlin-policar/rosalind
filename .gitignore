@@ -4,3 +4,4 @@ env/
 samples/
 solutions/
 literature/
+__pycache__/
