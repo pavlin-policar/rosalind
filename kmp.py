@@ -1,8 +1,10 @@
 import sys
 
-if __name__ == '__main__':
-    name = input()
-    content = sys.stdin.read().replace('\n', '')
+from Bio import SeqIO
+
+if __name__ == "__main__":
+    records = list(SeqIO.parse(sys.stdin, format="fasta"))
+    content = str(records[0].seq)
 
     P, j = [0] * len(content), 0
     for i in range(1, len(content)):
