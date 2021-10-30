@@ -1,85 +1,55 @@
-import operator
 import sys
-from collections import defaultdict, deque
-from itertools import product
 
+import numpy as np
 from Bio import SeqIO
 from Bio.SubsMat.MatrixInfo import pam250
 
 
-# TODO This doesn't work... Figure out why...
+def local_alignment(seq1, seq2, scoring_function):
+    # Prepend indel to strings to pad table
+    seq1, seq2 = "-" + seq1, "-" + seq2
 
+    table = np.empty(shape=(len(seq1), len(seq2)), dtype=np.float32)
+    table[:, 0] = table[0, :] = 0
 
-def print_dpt(table, x, y):
-    for i in range(x):
-        for j in range(y):
-            print('%2s' % table[i, j], end=' ')
-        print()
+    traceback = np.empty(shape=(len(seq1), len(seq2), 2), dtype=np.int64)
+    traceback[:, 0] = traceback[0, :] = 0
 
+    # Fill in dynamic programming table
+    for i in range(1, len(seq1)):
+        for j in range(1, len(seq2)):
+            table[i, j], traceback[i, j] = max(
+                (table[i - 1, j] + scoring_function(seq1[i], "-"), (i - 1, j)),
+                (table[i, j - 1] + scoring_function("-", seq2[j]), (i, j - 1)),
+                (table[i - 1, j - 1] + scoring_function(seq1[i], seq2[j]), (i - 1, j - 1),),
+                (0, (-1, -1)),
+                key=lambda x: x[0],
+            )
 
-def print_tbt(table, s1, s2):
-    print('     ', end=' ')
-    for i in range(len(s1)):
-        print('%7s ' % i, end='')
-    print()
-    for i in range(len(s1)):
-        print('%4s' % i, end='  ')
-        for j in range(len(s2)):
-            print('(%2s,%2s)' % table[i, j], end=' ')
-        print()
+    i, j = np.unravel_index(np.argmax(table), table.shape)
+    score = table[i, j]
+    alignment1, alignment2 = [], []
+    while table[i, j] > 0:
+        ni, nj = traceback[i, j]
+        alignment1.insert(0, seq1[i] if i != ni else "-")
+        alignment2.insert(0, seq2[j] if j != nj else "-")
+        i, j = ni, nj
 
+    alignment1 = "".join(alignment1)
+    alignment2 = "".join(alignment2)
 
-def print_table(dpt, tbt, s1, s2):
-    print('     ', end=' ')
-    for i in range(len(s2)):
-        print('%8s%3s ' % (s2[i], i), end='')
-    print()
-    for i in range(len(s1)):
-        print('%2s %2s' % (s1[i], i), end=' ')
-        for j in range(len(s2)):
-            print('[%2s](%2s,%2s)' % (dpt[i, j], *tbt[i, j]), end=' ')
-        print()
-
-
-def local_alignment(seq1, seq2, score):
-    M, T = defaultdict(int), defaultdict(lambda: (-1, -1))
-    for (i, ci), (j, cj) in product(enumerate(seq1), enumerate(seq2)):
-        M[i, j], T[i, j] = max(
-            (0, (-1, -1)),
-            (M[i - 1, j] + score(ci, '-'), (i - 1, j)),
-            (M[i, j - 1] + score('-', cj), (i, j - 1)),
-            (M[i - 1, j - 1] + score(ci, cj), (i - 1, j - 1)),
-            key=operator.itemgetter(0))
-    # print_table(M, T, seq1, seq2)
-    return M, T
-
-
-def traceback(seq1, seq2, T, pos):
-    s1, s2 = deque(), deque()
-    (x, y), (px, py) = pos, T[pos]
-    while px >= 0 and py >= 0:
-        if x is not px:
-            s1.appendleft(seq1[x])
-        if y is not py:
-            s2.appendleft(seq2[y])
-        x, y = px, py
-        px, py = T[x, y]
-    return ''.join(s1), ''.join(s2)
+    return alignment1, alignment2, score
 
 
 def score_function(x, y):
-    if x == '-' or y == '-':
+    if x == "-" or y == "-":
         return -5
     else:
         return pam250.get((x, y), pam250.get((y, x)))
 
 
-if __name__ == '__main__':
-    records = list(SeqIO.parse(sys.stdin, format='fasta'))
+if __name__ == "__main__":
+    records = list(SeqIO.parse(sys.stdin, format="fasta"))
     s1, s2 = records[0].seq, records[1].seq
-    # Perform local alignment
-    M, T = local_alignment(s1, s2, score=score_function)
-    # Find the largest alignment score in matrix
-    k, v = max(M.items(), key=operator.itemgetter(1))
-    # Print out the results and the traceback
-    print(v, *traceback(s1, s2, T, k), sep='\n')
+    seq1, seq2, score = local_alignment(str(s1), str(s2), score_function)
+    print(int(score), seq1.replace("-", ""), seq2.replace("-", ""), sep="\n")
