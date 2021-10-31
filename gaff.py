@@ -1,67 +1,79 @@
-import math
 import operator
 import sys
 from collections import defaultdict
-from collections import deque
-from itertools import product
 
+import numpy as np
 from Bio import SeqIO
-from Bio.SubsMat.MatrixInfo import blosum62
+from Bio.Align import substitution_matrices
+
+BLOSUM62 = substitution_matrices.load("BLOSUM62")
 
 
-def global_alignment(seq1, seq2, open_penalty, extend_penalty, score):
-    # Initialization
-    inf = lambda: -math.inf
-    M, X, Y = defaultdict(inf), defaultdict(inf), defaultdict(inf)
-    M[-1, -1] = 0
-    X[-1, -1] = -open_penalty
-    Y[-1, -1] = -open_penalty
-    for i in range(len(seq1)):
-        X[i, -1] = X[i - 1, -1] - extend_penalty
-    for j in range(len(seq2)):
-        Y[-1, j] = Y[-1, j - 1] - extend_penalty
+def global_alignment_affine_gap_scores(seq1, seq2, scoring_function, gap_start, gap_cont):
+    assert gap_start <= 0, "`gap_start` must be negative!"
+    assert gap_cont <= 0, "`gap_cont` must be negative!"
 
-    trace = lambda: (-1, -1)
-    MT, XT, YT = defaultdict(trace), defaultdict(trace), defaultdict(trace)
-    # Computation
-    for (i, ci), (j, cj) in product(enumerate(seq1), enumerate(seq2)):
-        M[i, j], MT[i, j] = max(
-            (M[i - 1, j - 1] + score(ci, cj), (MT, (i - 1, j - 1))),
-            (X[i - 1, j - 1] + score(ci, cj), (XT, (i - 1, j - 1))),
-            (Y[i - 1, j - 1] + score(ci, cj), (YT, (i - 1, j - 1))),
-            key=operator.itemgetter(0))
-        X[i, j], XT[i, j] = max(
-            (X[i - 1, j] - extend_penalty, (XT, (i - 1, j))),
-            (M[i - 1, j] - open_penalty, (MT, (i - 1, j))),
-            key=operator.itemgetter(0))
-        Y[i, j], YT[i, j] = max(
-            (Y[i, j - 1] - extend_penalty, (YT, (i, j - 1))),
-            (M[i, j - 1] - open_penalty, (MT, (i, j - 1))),
-            key=operator.itemgetter(0))
-    return M, MT, X, XT, Y, YT
+    seq1, seq2 = "-" + seq1, "-" + seq2
+
+    M_gap_s1 = np.zeros(shape=(len(seq1), len(seq2)), dtype=np.float32)
+    M_gap_s2 = np.zeros(shape=(len(seq1), len(seq2)), dtype=np.float32)
+    M = np.zeros(shape=(len(seq1), len(seq2)), dtype=np.float32)
+
+    M_gap_s1[:, 0] = M[:, 0] = gap_start + np.arange(len(seq1)) * gap_cont
+    M_gap_s2[0, :] = M[0, :] = gap_start + np.arange(len(seq2)) * gap_cont
+    M[0, 0] = 0
+
+    MT = defaultdict(lambda: (-1, -1))
+    MT_gap_s1 = defaultdict(lambda: (-1, -1))
+    MT_gap_s2 = defaultdict(lambda: (-1, -1))
+
+    # Fill in dynamic programming table
+    for i in range(1, len(seq1)):
+        for j in range(1, len(seq2)):
+            M_gap_s1[i, j], MT_gap_s1[i, j] = max(
+                ((M_gap_s1[i, j - 1] + gap_cont), (MT_gap_s1, (i, j - 1))),
+                ((M[i, j - 1] + gap_start), (MT, (i, j - 1))),
+                key=operator.itemgetter(0),
+            )
+            M_gap_s2[i, j], MT_gap_s2[i, j] = max(
+                ((M_gap_s2[i - 1, j] + gap_cont), (MT_gap_s2, (i - 1, j))),
+                ((M[i - 1, j] + gap_start), (MT, (i - 1, j))),
+                key=operator.itemgetter(0),
+            )
+            M[i, j], MT[i, j] = max(
+                (M_gap_s1[i, j], (MT_gap_s1, (i, j))),
+                (M_gap_s2[i, j], (MT_gap_s2, (i, j))),
+                (M[i - 1, j - 1] + scoring_function(seq1[i], seq2[j]), (MT, (i - 1, j - 1))),
+                key=operator.itemgetter(0),
+            )
+
+    # Trace-back and construct aligned sequences
+    i, j, trace_matrix, alignment1, alignment2 = len(seq1) - 1, len(seq2) - 1, MT, [], []
+    while i > 0 or j > 0:
+        trace_matrix, (ni, nj) = trace_matrix[i, j]
+        # If ni and nj are the same, we just switched matrices -> no output
+        if i == ni and j == nj:
+            continue
+        alignment1.insert(0, seq1[i] if i != ni else "-")
+        alignment2.insert(0, seq2[j] if j != nj else "-")
+        i, j = ni, nj
+
+    alignment1 = "".join(alignment1)
+    alignment2 = "".join(alignment2)
+    score = M[-1, -1]
+
+    return alignment1, alignment2, score
 
 
 def score_function(x, y):
-    return blosum62.get((x, y), blosum62.get((y, x)))
+    return BLOSUM62.get((x, y), BLOSUM62.get((y, x)))
 
 
-def traceback(seq1, seq2, mi, MT, XT, YT):
-    subs1, subs2 = deque(), deque()
-    x, y = len(seq1) - 1, len(seq2) - 1
-    while x >= 0 and y >= 0:
-        subs1.appendleft(seq1[x] if mi is MT or mi is XT else '-')
-        subs2.appendleft(seq2[y] if mi is MT or mi is YT else '-')
-        mi, (x, y) = mi[x, y]
-    return ''.join(subs1), ''.join(subs2)
-
-
-if __name__ == '__main__':
-    records = list(SeqIO.parse(sys.stdin, format='fasta'))
+if __name__ == "__main__":
+    records = list(SeqIO.parse(sys.stdin, format="fasta"))
     s1, s2 = records[0].seq, records[1].seq
 
-    M, MT, X, XT, Y, YT = global_alignment(
-        s1, s2, score=score_function, open_penalty=11, extend_penalty=1)
-
-    pos = (len(s1) - 1, len(s2) - 1)
-    best_score, starting_t = max((M[pos], MT), (X[pos], XT), (Y[pos], YT))
-    print(best_score, *traceback(s1, s2, starting_t, MT, XT, YT), sep='\n')
+    align1, align2, score = global_alignment_affine_gap_scores(
+        str(s1), str(s2), score_function, -11, -1
+    )
+    print(int(score), align1, align2, sep="\n")
